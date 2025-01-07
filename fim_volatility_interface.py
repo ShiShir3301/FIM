@@ -54,7 +54,7 @@ def load_data(file_path):
     start_date = pd.Timestamp.now() - pd.DateOffset(years=10)
     df = df[df['Date'] >= start_date]
 
-    # Fix: Ensure that the group-by applies correctly and returns a Series for each column
+    # Ensure the volatility columns are computed correctly
     df['Historical_Volatility'] = df.groupby('Company Name').apply(
         lambda group: calculate_volatility(group, method="historical", window=12)
     ).reset_index(level=0, drop=True)
@@ -124,5 +124,6 @@ if uploaded_file is not None:
         st.write(filtered_data)
 else:
     st.info("Please upload an Excel file to begin.")
+
 
 

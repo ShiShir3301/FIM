@@ -88,7 +88,7 @@ if uploaded_file is not None:
     selected_sectors = st.sidebar.multiselect("Select Sectors", sectors, default=sectors)
 
     # Filter Data
-    filtered_data = data[
+    filtered_data = data[ 
         (data['Company Name'].isin(selected_companies)) & 
         (data['Sector'].isin(selected_sectors))
     ]
@@ -125,4 +125,5 @@ if uploaded_file is not None:
         st.write(filtered_data)
 else:
     st.info("Please upload an Excel file to begin.")
+
 

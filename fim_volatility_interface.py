@@ -54,18 +54,18 @@ def load_data(file_path):
     start_date = pd.Timestamp.now() - pd.DateOffset(years=10)
     df = df[df['Date'] >= start_date]
 
-    # Ensure the volatility columns are computed correctly
+    # Calculate Volatility for Each Company and Add to DataFrame
     df['Historical_Volatility'] = df.groupby('Company Name').apply(
         lambda group: calculate_volatility(group, method="historical", window=12)
-    ).reset_index(level=0, drop=True)
+    ).reset_index(level=0, drop=True)  # Ensure that result is a single column (reset index)
 
     df['GARCH_Volatility'] = df.groupby('Company Name').apply(
         lambda group: calculate_volatility(group, method="garch")
-    ).reset_index(level=0, drop=True)
+    ).reset_index(level=0, drop=True)  # Ensure that result is a single column (reset index)
 
     df['Volume_Weighted_Volatility'] = df.groupby('Company Name').apply(
         lambda group: calculate_volatility(group, method="volume_weighted", window=12)
-    ).reset_index(level=0, drop=True)
+    ).reset_index(level=0, drop=True)  # Ensure that result is a single column (reset index)
 
     return df
 
@@ -124,6 +124,7 @@ if uploaded_file is not None:
         st.write(filtered_data)
 else:
     st.info("Please upload an Excel file to begin.")
+
 
 
 

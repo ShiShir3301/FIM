@@ -54,19 +54,18 @@ def load_data(file_path):
     start_date = pd.Timestamp.now() - pd.DateOffset(years=10)
     df = df[df['Date'] >= start_date]
 
-    # Calculate volatility measures
-    # Fix: Applying volatility functions without returning a DataFrame
+    # Fix: Ensure that the group-by applies correctly and returns a Series for each column
     df['Historical_Volatility'] = df.groupby('Company Name').apply(
         lambda group: calculate_volatility(group, method="historical", window=12)
-    ).reset_index(level=0, drop=True)  # Remove multi-index
+    ).reset_index(level=0, drop=True)
 
     df['GARCH_Volatility'] = df.groupby('Company Name').apply(
         lambda group: calculate_volatility(group, method="garch")
-    ).reset_index(level=0, drop=True)  # Remove multi-index
+    ).reset_index(level=0, drop=True)
 
     df['Volume_Weighted_Volatility'] = df.groupby('Company Name').apply(
         lambda group: calculate_volatility(group, method="volume_weighted", window=12)
-    ).reset_index(level=0, drop=True)  # Remove multi-index
+    ).reset_index(level=0, drop=True)
 
     return df
 
@@ -88,7 +87,7 @@ if uploaded_file is not None:
     selected_sectors = st.sidebar.multiselect("Select Sectors", sectors, default=sectors)
 
     # Filter Data
-    filtered_data = data[ 
+    filtered_data = data[
         (data['Company Name'].isin(selected_companies)) & 
         (data['Sector'].isin(selected_sectors))
     ]

@@ -46,8 +46,8 @@ def calculate_volatility(data, method="historical", **kwargs):
 
 # Data Loading Function
 @st.cache
-def load_data(C:\Users\USER\Documents\FIM_tables):
-    df = pd.read_excel(C:\Users\USER\Documents\FIM_tables)
+def load_data(file_path):
+    df = pd.read_excel(file_path)
     df['Date'] = pd.to_datetime(df['Date'])
     df = df.sort_values(by=['Company Name', 'Date'])
 

@@ -1,127 +1,102 @@
 # -*- coding: utf-8 -*-
-import streamlit as st
+# Import necessary libraries
 import pandas as pd
 import numpy as np
-from arch import arch_model
-import plotly.express as px
+import streamlit as st
+from arch import arch_model  # For GARCH modeling
 
-# Volatility Calculation Functions
-def calculate_historical_volatility(data, window=12):
-    data['Log_Returns'] = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
-    data['Historical_Volatility'] = data['Log_Returns'].rolling(window=window).std() * np.sqrt(12)
-    return data['Historical_Volatility']
+# Function to calculate return, variance, and deviation
+def calculate_statistics(df):
+    df['Return'] = df['DSEX Index'].pct_change()  # Daily return
+    df['Variance'] = df['Return'].var()  # Overall variance
+    df['Deviation'] = df['Return'].std()  # Overall standard deviation
+    return df
 
-def calculate_garch_volatility(data):
-    log_returns = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
-    log_returns = log_returns.dropna()
-    model = arch_model(log_returns, vol='Garch', p=1, q=1)
-    model_fit = model.fit(disp='off')
-    data.loc[log_returns.index, 'GARCH_Volatility'] = np.sqrt(model_fit.conditional_volatility) * np.sqrt(12)
-    return data['GARCH_Volatility']
+# Function to calculate rolling return, variance, and deviation
+def calculate_rolling_statistics(df, window=20):
+    df['Rolling_Return'] = df['Return'].rolling(window=window).mean()  # Rolling return
+    df['Rolling_Variance'] = df['Return'].rolling(window=window).var()  # Rolling variance
+    df['Rolling_Deviation'] = df['Return'].rolling(window=window).std()  # Rolling standard deviation
+    return df
 
-def calculate_volume_weighted_volatility(data, window=12):
-    data['Log_Returns'] = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
-    data['Weighted_Variance'] = (data['Volume'] * (data['Log_Returns'] - data['Log_Returns'].mean())**2)
-    data['Volume_Weighted_Volatility'] = (
-        data['Weighted_Variance'].rolling(window=window).sum() / data['Volume'].rolling(window=window).sum()
-    ) ** 0.5 * np.sqrt(12)
-    return data['Volume_Weighted_Volatility']
+# Function to calculate GARCH volatility
+def calculate_garch_volatility(df, p=1, q=1, dist="normal"):
+    # Ensure no NaN values in the return column for GARCH modeling
+    returns = df['Return'].dropna()
+    if returns.empty:
+        df['GARCH_Volatility'] = np.nan
+        return df
+    
+    # Fit a GARCH(p, q) model
+    garch_model = arch_model(returns, vol='Garch', p=p, q=q, dist=dist)
+    garch_fit = garch_model.fit(disp="off")
+    
+    # Predict conditional volatility
+    df['GARCH_Volatility'] = np.nan
+    df.loc[returns.index, 'GARCH_Volatility'] = garch_fit.conditional_volatility
+    return df
 
-def calculate_volatility(data, method="historical", **kwargs):
-    if method == "historical":
-        return calculate_historical_volatility(data, **kwargs)
-    elif method == "garch":
-        return calculate_garch_volatility(data)
-    elif method == "volume_weighted":
-        return calculate_volume_weighted_volatility(data, **kwargs)
-    else:
-        raise ValueError("Invalid method. Choose from 'historical', 'garch', 'volume_weighted'.")
-
-# Data Loading Function
-@st.cache_data
-def load_data(file_path):
+# Function to load and process data
+@st.cache_data  # Cache the data processing function
+def load_data(file_path, rolling_window):
+    # Read Excel file and rename columns
     df = pd.read_excel(file_path)
+    df.columns = [
+        'Date', 
+        'DSEX Index', 
+        'DSEX Index Change', 
+        'Total Trade', 
+        'Total Value Taka(mn)', 
+        'Total Volume', 
+        'Total Market Cap. Taka(mn)'
+    ]
+    
+    # Convert Date column to datetime and sort the data
     df['Date'] = pd.to_datetime(df['Date'])
-    df = df.sort_values(by=['Company Name', 'Date'])
-    
-    start_date = pd.Timestamp.now() - pd.DateOffset(years=10)
-    df = df[df['Date'] >= start_date]
-    
-    required_columns = {'Adj Close', 'Date', 'Company Name', 'Volume', 'Sector'}
-    if not required_columns.issubset(df.columns):
-        st.error(f"Missing required columns: {required_columns - set(df.columns)}")
-        st.stop()
-        
-    df['Historical_Volatility'] = df.groupby('Company Name').apply(
-        lambda group: calculate_historical_volatility(group, window=12)
-    ).reset_index(level=0, drop=True)
-    
-    df['GARCH_Volatility'] = df.groupby('Company Name').apply(
-        lambda group: calculate_garch_volatility(group)
-    ).reset_index(level=0, drop=True)
-    
-    df['Volume_Weighted_Volatility'] = df.groupby('Company Name').apply(
-        lambda group: calculate_volume_weighted_volatility(group, window=12)
-    ).reset_index(level=0, drop=True)
-    
+    df = df.sort_values(by='Date')
+
+    # Calculate return, variance, and deviation
+    df = calculate_statistics(df)
+
+    # Calculate rolling statistics with the chosen window size
+    df = calculate_rolling_statistics(df, window=rolling_window)
+
+    # Calculate GARCH volatility with default parameters (p=1, q=1, normal distribution)
+    df = calculate_garch_volatility(df)
+
     return df
 
 # Streamlit App
-st.title("Volatility Analysis for Companies and Industries")
+st.title("DSEX Volatility Analysis")
 
-# File Upload
-uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"])
+# File uploader for Excel data
+uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
 if uploaded_file is not None:
-    data = load_data(uploaded_file)
+    # Add a slider to control the rolling window size
+    rolling_window = st.slider("Select Rolling Window Size (Days)", min_value=4, max_value=20, value=20, step=1)
 
-    # Sidebar Filters
-    st.sidebar.header("Filter Options")
-    companies = data['Company Name'].unique()
-    selected_companies = st.sidebar.multiselect("Select Companies", companies, default=companies)
+    # Load and process the uploaded data
+    data = load_data(uploaded_file, rolling_window)
 
-    sectors = data['Sector'].unique()
-    selected_sectors = st.sidebar.multiselect("Select Sectors", sectors, default=sectors)
+    # Display the processed data
+    st.subheader("Processed Data")
+    st.dataframe(data)
 
-    # Filter Data
-    filtered_data = data[(
-        data['Company Name'].isin(selected_companies)) &
-        (data['Sector'].isin(selected_sectors))
-    ]
+    # Plot volatility metrics
+    st.subheader("Volatility Metrics")
+    st.line_chart(data[['Date', 'Return']].set_index('Date'))
+    st.line_chart(data[['Date', 'Rolling_Variance']].set_index('Date'))
+    st.line_chart(data[['Date', 'Rolling_Deviation']].set_index('Date'))
+    st.line_chart(data[['Date', 'GARCH_Volatility']].set_index('Date'))
 
-    # Select Volatility Type
-    volatility_type = st.selectbox(
-        "Select Volatility Type:",
-        ["Historical_Volatility", "GARCH_Volatility", "Volume_Weighted_Volatility"]
+    # Download button for the processed data
+    st.download_button(
+        label="Download Processed Data as CSV",
+        data=data.to_csv(index=False),
+        file_name="processed_volatility_data.csv",
+        mime="text/csv",
     )
-
-    # Show Volatility for Companies
-    if st.checkbox("Show Volatility for Companies"):
-        for company in selected_companies:
-            company_data = filtered_data[filtered_data['Company Name'] == company]
-            fig = px.line(
-                company_data, x='Date', y=volatility_type,
-                title=f"{company} - {volatility_type.replace('_', ' ')} Over Time",
-                labels={'Date': 'Date', volatility_type: volatility_type.replace('_', ' ')}
-            )
-            st.plotly_chart(fig)
-
-    # Compare Volatility Across Sectors
-    if st.checkbox("Compare Industry Volatilities"):
-        industry_volatility = filtered_data.groupby(['Sector', 'Date'])[volatility_type].mean().reset_index()
-        fig = px.line(
-            industry_volatility, x='Date', y=volatility_type, color='Sector',
-            title=f"Sector-Wise {volatility_type.replace('_', ' ')} Comparison",
-            labels={'Date': 'Date', volatility_type: volatility_type.replace('_', ' '), 'Sector': 'Sector'}
-        )
-        st.plotly_chart(fig)
-
-    # Display Raw Data
-    if st.checkbox("Show Raw Data"):
-        st.write(filtered_data)
-else:
-    st.info("Please upload an Excel file to begin.")
-
 
 
 

@@ -38,7 +38,7 @@ def calculate_garch_volatility(df, p=1, q=1, dist="normal"):
 
 # Function to load and process data
 @st.cache_data  # Cache the data processing function
-def load_data(file_path, rolling_window):
+def load_data(file_path, rolling_window, garch_p, garch_q, garch_dist):
     # Read Excel file and rename columns
     df = pd.read_excel(file_path)
     df.columns = [
@@ -61,8 +61,8 @@ def load_data(file_path, rolling_window):
     # Calculate rolling statistics with the chosen window size
     df = calculate_rolling_statistics(df, window=rolling_window)
 
-    # Calculate GARCH volatility with default parameters (p=1, q=1, normal distribution)
-    df = calculate_garch_volatility(df)
+    # Calculate GARCH volatility with user-selected parameters
+    df = calculate_garch_volatility(df, p=garch_p, q=garch_q, dist=garch_dist)
 
     return df
 
@@ -73,21 +73,37 @@ st.title("DSEX Volatility Analysis")
 uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
 if uploaded_file is not None:
-    # Add a slider to control the rolling window size
+    # Add sliders for rolling window size and GARCH parameters
     rolling_window = st.slider("Select Rolling Window Size (Days)", min_value=4, max_value=20, value=20, step=1)
+    garch_p = st.slider("Select GARCH p-parameter", min_value=1, max_value=5, value=1, step=1)
+    garch_q = st.slider("Select GARCH q-parameter", min_value=1, max_value=5, value=1, step=1)
+    garch_dist = st.selectbox("Select GARCH Distribution", options=["normal", "t", "skewt"], index=0)
 
     # Load and process the uploaded data
-    data = load_data(uploaded_file, rolling_window)
+    data = load_data(uploaded_file, rolling_window, garch_p, garch_q, garch_dist)
 
     # Display the processed data
     st.subheader("Processed Data")
     st.dataframe(data)
 
+    # Statistical Summary
+    st.subheader("Statistical Summary")
+    st.write("Summary of key metrics:")
+    st.write(data.describe())
+
     # Plot volatility metrics
     st.subheader("Volatility Metrics")
+
+    st.write("### Daily Returns")
     st.line_chart(data[['Date', 'Return']].set_index('Date'))
+
+    st.write(f"### Rolling Variance (Window: {rolling_window} Days)")
     st.line_chart(data[['Date', 'Rolling_Variance']].set_index('Date'))
+
+    st.write(f"### Rolling Standard Deviation (Window: {rolling_window} Days)")
     st.line_chart(data[['Date', 'Rolling_Deviation']].set_index('Date'))
+
+    st.write(f"### GARCH Volatility (p={garch_p}, q={garch_q}, Distribution: {garch_dist})")
     st.line_chart(data[['Date', 'GARCH_Volatility']].set_index('Date'))
 
     # Download button for the processed data

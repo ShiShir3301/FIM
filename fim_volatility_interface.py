@@ -12,10 +12,11 @@ def calculate_historical_volatility(data, window=12):
     return data['Historical_Volatility']
 
 def calculate_garch_volatility(data):
-    data['Log_Returns'] = np.log(data['Adj Close'] / data['Adj Close'].shift(1)).dropna()
-    model = arch_model(data['Log_Returns'], vol='Garch', p=1, q=1)
+    log_returns = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
+    log_returns = log_returns.dropna()
+    model = arch_model(log_returns, vol='Garch', p=1, q=1)
     model_fit = model.fit(disp='off')
-    data['GARCH_Volatility'] = np.sqrt(model_fit.conditional_volatility) * np.sqrt(12)
+    data.loc[log_returns.index, 'GARCH_Volatility'] = np.sqrt(model_fit.conditional_volatility) * np.sqrt(12)
     return data['GARCH_Volatility']
 
 def calculate_volume_weighted_volatility(data, window=12):
@@ -37,29 +38,32 @@ def calculate_volatility(data, method="historical", **kwargs):
         raise ValueError("Invalid method. Choose from 'historical', 'garch', 'volume_weighted'.")
 
 # Data Loading Function
-@st.cache_data  # Using st.cache_data as st.cache is deprecated
+@st.cache_data
 def load_data(file_path):
     df = pd.read_excel(file_path)
     df['Date'] = pd.to_datetime(df['Date'])
     df = df.sort_values(by=['Company Name', 'Date'])
-
-    # Filter for the last 10 years of data
+    
     start_date = pd.Timestamp.now() - pd.DateOffset(years=10)
     df = df[df['Date'] >= start_date]
-
-    # Calculate Volatility for Each Company and Add to DataFrame
+    
+    required_columns = {'Adj Close', 'Date', 'Company Name', 'Volume', 'Sector'}
+    if not required_columns.issubset(df.columns):
+        st.error(f"Missing required columns: {required_columns - set(df.columns)}")
+        st.stop()
+        
     df['Historical_Volatility'] = df.groupby('Company Name').apply(
-        lambda group: calculate_volatility(group, method="historical", window=12)
-    ).reset_index(level=0, drop=True)  # Ensure that result is a single column (reset index)
-
+        lambda group: calculate_historical_volatility(group, window=12)
+    ).reset_index(level=0, drop=True)
+    
     df['GARCH_Volatility'] = df.groupby('Company Name').apply(
-        lambda group: calculate_volatility(group, method="garch")
-    ).reset_index(level=0, drop=True)  # Ensure that result is a single column (reset index)
-
+        lambda group: calculate_garch_volatility(group)
+    ).reset_index(level=0, drop=True)
+    
     df['Volume_Weighted_Volatility'] = df.groupby('Company Name').apply(
-        lambda group: calculate_volatility(group, method="volume_weighted", window=12)
-    ).reset_index(level=0, drop=True)  # Ensure that result is a single column (reset index)
-
+        lambda group: calculate_volume_weighted_volatility(group, window=12)
+    ).reset_index(level=0, drop=True)
+    
     return df
 
 # Streamlit App
@@ -117,7 +121,6 @@ if uploaded_file is not None:
         st.write(filtered_data)
 else:
     st.info("Please upload an Excel file to begin.")
-
 
 
 

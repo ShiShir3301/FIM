@@ -6,12 +6,10 @@ import streamlit as st
 from arch import arch_model  # For GARCH modeling
 
 # Function to calculate effective and nominal returns
-def calculate_returns(df, return_type="nominal", m=12, n=1):
+def calculate_returns(df, return_type="nominal", m=12):
     try:
         # Ensure the Date column is sorted and calculate the time difference
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        if df['Date'].isnull().any():
-            raise ValueError("Invalid date format in the data.")
+        df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values(by='Date')
         df['Days_Diff'] = df['Date'].diff().dt.days
 
@@ -22,25 +20,23 @@ def calculate_returns(df, return_type="nominal", m=12, n=1):
             # Effective return: Accounts for time between observations
             df['Return'] = (df['DSEX Index'] / df['DSEX Index'].shift(1)) ** (365 / df['Days_Diff']) - 1
         else:
-            raise ValueError("Invalid return type. Choose 'nominal' or 'effective'.")
-
+            raise ValueError("Invalid return type selected. Choose either 'nominal' or 'effective'.")
+        
         # Drop rows with NaN values created due to shifts
         df = df.dropna(subset=['Return'])
         return df
     except Exception as e:
-        st.error(f"Error in calculating returns: {e}")
+        st.error(f"Error calculating returns: {e}")
         return pd.DataFrame()
 
 # Function to calculate variance and standard deviation
 def calculate_statistics(df):
     try:
-        if 'Return' not in df.columns or df['Return'].isnull().all():
-            raise ValueError("No valid returns data for statistical calculations.")
-        df['Variance'] = df['Return'].var()  # Overall variance
-        df['Deviation'] = df['Return'].std()  # Overall standard deviation
+        df['Variance'] = np.var(df['Return'])  # Overall variance
+        df['Deviation'] = np.std(df['Return'])  # Overall standard deviation
         return df
     except Exception as e:
-        st.error(f"Error in calculating statistics: {e}")
+        st.error(f"Error calculating statistics: {e}")
         return pd.DataFrame()
 
 # Function to calculate GARCH volatility
@@ -48,7 +44,10 @@ def calculate_garch_volatility(df, p=1, q=1, dist="normal"):
     try:
         returns = df['Return'].dropna()
         if returns.empty:
-            raise ValueError("No valid returns data for GARCH modeling.")
+            st.warning("No valid returns to calculate GARCH volatility.")
+            df['GARCH_Volatility'] = np.nan
+            return df
+
         # Fit a GARCH(p, q) model
         garch_model = arch_model(returns, vol='Garch', p=p, q=q, dist=dist)
         garch_fit = garch_model.fit(disp="off")
@@ -58,12 +57,12 @@ def calculate_garch_volatility(df, p=1, q=1, dist="normal"):
         df.loc[returns.index, 'GARCH_Volatility'] = garch_fit.conditional_volatility
         return df
     except Exception as e:
-        st.error(f"Error in calculating GARCH volatility: {e}")
+        st.error(f"Error calculating GARCH volatility: {e}")
         return pd.DataFrame()
 
 # Function to load and process data
 @st.cache_data
-def load_data(file_path, return_type, m, n, garch_p, garch_q, garch_dist):
+def load_data(file_path, return_type, m, garch_p, garch_q, garch_dist):
     try:
         df = pd.read_excel(file_path)
         df.columns = [
@@ -76,8 +75,8 @@ def load_data(file_path, return_type, m, n, garch_p, garch_q, garch_dist):
             'Total Market Cap. Taka(mn)'
         ]
 
-        # Calculate customizable returns
-        df = calculate_returns(df, return_type=return_type, m=m, n=n)
+        # Calculate returns
+        df = calculate_returns(df, return_type=return_type, m=m)
 
         # Calculate overall variance and deviation
         df = calculate_statistics(df)
@@ -87,7 +86,7 @@ def load_data(file_path, return_type, m, n, garch_p, garch_q, garch_dist):
 
         return df
     except Exception as e:
-        st.error(f"Error in loading and processing data: {e}")
+        st.error(f"Error loading and processing data: {e}")
         return pd.DataFrame()
 
 # Streamlit App
@@ -102,7 +101,6 @@ if uploaded_file is not None:
 
     # Parameters for return calculation
     m = st.slider("Compounding Frequency (m)", min_value=1, max_value=365, value=365)
-    n = st.slider("Period Selection (n)", min_value=1, max_value=2, value=2)
 
     # GARCH parameters
     garch_p = st.slider("GARCH p-parameter", min_value=1, max_value=5, value=1)
@@ -110,7 +108,7 @@ if uploaded_file is not None:
     garch_dist = st.selectbox("GARCH Distribution", options=["normal", "t", "skewt"], index=0)
 
     # Load and process the uploaded data
-    data = load_data(uploaded_file, return_type, m, n, garch_p, garch_q, garch_dist)
+    data = load_data(uploaded_file, return_type, m, garch_p, garch_q, garch_dist)
 
     if not data.empty:
         # Display the processed data
@@ -119,14 +117,18 @@ if uploaded_file is not None:
 
         # Statistical Summary
         st.subheader("Statistical Summary")
-        st.write("Summary of key metrics:")
         st.write(data.describe())
 
         # Plot volatility metrics
         st.subheader("Volatility Metrics")
-
         st.write("### Daily Returns")
         st.line_chart(data[['Date', 'Return']].set_index('Date'))
+
+        st.write("### Variance")
+        st.line_chart(data[['Date', 'Variance']].set_index('Date'))
+
+        st.write("### Standard Deviation")
+        st.line_chart(data[['Date', 'Deviation']].set_index('Date'))
 
         st.write("### GARCH Volatility")
         st.line_chart(data[['Date', 'GARCH_Volatility']].set_index('Date'))
@@ -138,4 +140,3 @@ if uploaded_file is not None:
             file_name="processed_volatility_data.csv",
             mime="text/csv",
         )
-

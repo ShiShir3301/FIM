@@ -29,11 +29,12 @@ def calculate_returns(df, return_type="nominal", m=12):
         st.error(f"Error calculating returns: {e}")
         return pd.DataFrame()
 
-# Function to calculate variance and standard deviation
+# Function to calculate variance and standard deviation based on return type
 def calculate_statistics(df):
     try:
-        df['Variance'] = np.var(df['Return'])  # Overall variance
-        df['Deviation'] = np.std(df['Return'])  # Overall standard deviation
+        # Variance and standard deviation are computed for the 'Return' column
+        df['Variance'] = df['Return'].expanding().var()
+        df['Deviation'] = df['Return'].expanding().std()
         return df
     except Exception as e:
         st.error(f"Error calculating statistics: {e}")
@@ -78,7 +79,7 @@ def load_data(file_path, return_type, m, garch_p, garch_q, garch_dist):
         # Calculate returns
         df = calculate_returns(df, return_type=return_type, m=m)
 
-        # Calculate overall variance and deviation
+        # Calculate overall variance and deviation based on returns
         df = calculate_statistics(df)
 
         # Calculate GARCH volatility

@@ -4,3 +4,4 @@ numpy
 arch
 plotly
 openpyxl
+matplotlib

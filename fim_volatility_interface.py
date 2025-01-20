@@ -88,23 +88,54 @@ def load_data(file_path, sheet_name, calculate_garch, garch_p=1, garch_q=1, garc
 def plot_figures(df, sheet_name):
     try:
         st.write(f"### Figures for {sheet_name}")
+
         # Time-series plot of returns
         if 'Return' in df.columns:
-            st.line_chart(df.set_index('Date')['Return'], height=400, use_container_width=True, title="Daily Returns")
+            st.write("#### Time-Series of Daily Returns")
+            st.line_chart(df.set_index('Date')['Return'], height=400, use_container_width=True)
 
         # Time-series plot of GARCH Volatility
         if 'GARCH_Volatility' in df.columns:
-            st.line_chart(df.set_index('Date')['GARCH_Volatility'], height=400, use_container_width=True, title="GARCH Volatility")
+            st.write("#### Time-Series of GARCH Volatility")
+            st.line_chart(df.set_index('Date')['GARCH_Volatility'], height=400, use_container_width=True)
+
+        # Time-series plots for Variance and Standard Deviation
+        if 'Variance' in df.columns and 'Standard_Deviation' in df.columns:
+            st.write("#### Time-Series of Variance and Standard Deviation")
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.plot(df['Date'], df['Variance'], label='Variance', color='blue')
+            ax.plot(df['Date'], df['Standard_Deviation'], label='Standard Deviation', color='orange')
+            ax.set_title("Variance and Standard Deviation Over Time")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Value")
+            ax.legend()
+            ax.grid()
+            st.pyplot(fig)
+
+        # Combined figure: GARCH Volatility, Variance, and Standard Deviation
+        if 'GARCH_Volatility' in df.columns and 'Variance' in df.columns and 'Standard_Deviation' in df.columns:
+            st.write("#### Combined Figure: GARCH Volatility, Variance, and Standard Deviation")
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.plot(df['Date'], df['GARCH_Volatility'], label='GARCH Volatility', color='green')
+            ax.plot(df['Date'], df['Variance'], label='Variance', color='blue')
+            ax.plot(df['Date'], df['Standard_Deviation'], label='Standard Deviation', color='orange')
+            ax.set_title("GARCH Volatility, Variance, and Standard Deviation Over Time")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Value")
+            ax.legend()
+            ax.grid()
+            st.pyplot(fig)
 
         # Histogram of Returns
         if 'Return' in df.columns:
-            st.write("### Histogram of Returns")
-            fig, ax = plt.subplots()
+            st.write("#### Histogram of Daily Returns")
+            fig, ax = plt.subplots(figsize=(8, 5))
             ax.hist(df['Return'], bins=50, color='skyblue', edgecolor='black')
             ax.set_title("Histogram of Daily Returns")
             ax.set_xlabel("Return")
             ax.set_ylabel("Frequency")
             st.pyplot(fig)
+
     except Exception as e:
         st.error(f"Error generating plots: {e}")
 

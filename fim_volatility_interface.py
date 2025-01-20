@@ -1,27 +1,19 @@
 # -*- coding: utf-8 -*-
-# Import necessary libraries
 import pandas as pd
 import numpy as np
 import streamlit as st
 from arch import arch_model  # For GARCH modeling
 
-# Function to calculate effective and nominal returns
-def calculate_returns(df, return_type="nominal", m=12):
+# Function to calculate returns
+def calculate_returns(df, index_column="DSEX Index"):
     try:
-        # Ensure the Date column is sorted and calculate the time difference
+        # Ensure the Date column is sorted
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.sort_values(by='Date')
-        df['Days_Diff'] = df['Date'].diff().dt.days
 
-        if return_type == "nominal":
-            # Nominal return: Return relative to the previous value
-            df['Return'] = df['DSEX Index'].pct_change()
-        elif return_type == "effective":
-            # Effective return: Accounts for time between observations
-            df['Return'] = (df['DSEX Index'] / df['DSEX Index'].shift(1)) ** (365 / df['Days_Diff']) - 1
-        else:
-            raise ValueError("Invalid return type selected. Choose either 'nominal' or 'effective'.")
-        
+        # Calculate nominal returns
+        df['Return'] = df[index_column].pct_change()
+
         # Drop rows with NaN values created due to shifts
         df = df.dropna(subset=['Return'])
         return df
@@ -29,12 +21,12 @@ def calculate_returns(df, return_type="nominal", m=12):
         st.error(f"Error calculating returns: {e}")
         return pd.DataFrame()
 
-# Function to calculate variance and standard deviation based on return type
+# Function to calculate variance and standard deviation
 def calculate_statistics(df):
     try:
-        # Variance and standard deviation are computed for the 'Return' column
+        # Variance and standard deviation for 'Return' column
         df['Variance'] = df['Return'].expanding().var()
-        df['Deviation'] = df['Return'].expanding().std()
+        df['Standard_Deviation'] = df['Return'].expanding().std()
         return df
     except Exception as e:
         st.error(f"Error calculating statistics: {e}")
@@ -61,29 +53,50 @@ def calculate_garch_volatility(df, p=1, q=1, dist="normal"):
         st.error(f"Error calculating GARCH volatility: {e}")
         return pd.DataFrame()
 
-# Function to load and process data
-@st.cache_data
-def load_data(file_path, return_type, m, garch_p, garch_q, garch_dist):
+# Function to calculate liquidity proxy, turnover ratio, volume spike, and market cap adjusted return
+def calculate_additional_metrics(df):
     try:
-        df = pd.read_excel(file_path)
-        df.columns = [
-            'Date',
-            'DSEX Index',
-            'DSEX Index Change',
-            'Total Trade',
-            'Total Value Taka(mn)',
-            'Total Volume',
-            'Total Market Cap. Taka(mn)'
-        ]
+        # Liquidity proxy: Total Value / Total Trade
+        df['Liquidity_Proxy'] = df['Total Value Taka(mn)'] / df['Total Trade']
 
-        # Calculate returns
-        df = calculate_returns(df, return_type=return_type, m=m)
+        # Turnover ratio: Total Value / Total Market Cap
+        df['Turnover_Ratio'] = df['Total Value Taka(mn)'] / df['Total Market Cap. Taka(mn)']
 
-        # Calculate overall variance and deviation based on returns
-        df = calculate_statistics(df)
+        # Volume spike: Change in Total Volume
+        df['Volume_Spike'] = df['Total Volume'].pct_change()
 
-        # Calculate GARCH volatility
-        df = calculate_garch_volatility(df, p=garch_p, q=garch_q, dist=garch_dist)
+        # Market cap adjusted return
+        df['Market_Cap_Adj_Return'] = df['Return'] * df['Total Market Cap. Taka(mn)']
+
+        # Drop NaN rows created by percentage change
+        df = df.dropna()
+        return df
+    except Exception as e:
+        st.error(f"Error calculating additional metrics: {e}")
+        return pd.DataFrame()
+
+# Function to load and process data for a given sheet
+@st.cache_data
+def load_data(file_path, sheet_name, calculate_garch, garch_p=1, garch_q=1, garch_dist="normal"):
+    try:
+        # Load data from the specific sheet
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+        # Standardize column names for processing
+        if sheet_name == "Sheet1":
+            df.columns = [
+                'Date', 'DSEX Index', 'Total Trade', 'Total Value Taka(mn)', 
+                'Total Volume', 'Total Market Cap. Taka(mn)'
+            ]
+            df = calculate_returns(df)
+            df = calculate_statistics(df)
+            df = calculate_additional_metrics(df)
+        elif sheet_name == "Sheet2":
+            df.columns = ['Date', 'DSEX Index']
+            df = calculate_returns(df)
+            df = calculate_statistics(df)
+            if calculate_garch:
+                df = calculate_garch_volatility(df, p=garch_p, q=garch_q, dist=garch_dist)
 
         return df
     except Exception as e:
@@ -91,53 +104,39 @@ def load_data(file_path, return_type, m, garch_p, garch_q, garch_dist):
         return pd.DataFrame()
 
 # Streamlit App
-st.title("DSEX Volatility Analysis")
+st.title("DSEX Volatility and Metrics Analysis")
 
 # File uploader for Excel data
-uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload Excel File with Two Sheets", type=["xlsx"])
 
 if uploaded_file is not None:
-    # Dropdown for return type
-    return_type = st.selectbox("Select Return Type", options=["nominal", "effective"], index=0)
-
-    # Parameters for return calculation
-    m = st.slider("Compounding Frequency (m)", min_value=1, max_value=365, value=365)
-
-    # GARCH parameters
+    # GARCH calculation toggle for Sheet2
+    calculate_garch = st.checkbox("Calculate GARCH Volatility for Sheet2", value=True)
     garch_p = st.slider("GARCH p-parameter", min_value=1, max_value=5, value=1)
     garch_q = st.slider("GARCH q-parameter", min_value=1, max_value=5, value=1)
     garch_dist = st.selectbox("GARCH Distribution", options=["normal", "t", "skewt"], index=0)
 
-    # Load and process the uploaded data
-    data = load_data(uploaded_file, return_type, m, garch_p, garch_q, garch_dist)
-
-    if not data.empty:
-        # Display the processed data
-        st.subheader("Processed Data")
-        st.dataframe(data)
-
-        # Statistical Summary
-        st.subheader("Statistical Summary")
-        st.write(data.describe())
-
-        # Plot volatility metrics
-        st.subheader("Volatility Metrics")
-        st.write("### Daily Returns")
-        st.line_chart(data[['Date', 'Return']].set_index('Date'))
-
-        st.write("### Variance")
-        st.line_chart(data[['Date', 'Variance']].set_index('Date'))
-
-        st.write("### Standard Deviation")
-        st.line_chart(data[['Date', 'Deviation']].set_index('Date'))
-
-        st.write("### GARCH Volatility")
-        st.line_chart(data[['Date', 'GARCH_Volatility']].set_index('Date'))
-
-        # Download button for the processed data
+    # Load and process Sheet1 data
+    st.subheader("Metrics from Sheet1 (73 rows)")
+    sheet1_data = load_data(uploaded_file, "Sheet1", calculate_garch=False)
+    if not sheet1_data.empty:
+        st.dataframe(sheet1_data)
         st.download_button(
-            label="Download Processed Data as CSV",
-            data=data.to_csv(index=False),
-            file_name="processed_volatility_data.csv",
+            label="Download Sheet1 Processed Data as CSV",
+            data=sheet1_data.to_csv(index=False),
+            file_name="sheet1_processed_data.csv",
             mime="text/csv",
         )
+
+    # Load and process Sheet2 data
+    st.subheader("Metrics from Sheet2 (242 rows)")
+    sheet2_data = load_data(uploaded_file, "Sheet2", calculate_garch, garch_p, garch_q, garch_dist)
+    if not sheet2_data.empty:
+        st.dataframe(sheet2_data)
+        st.download_button(
+            label="Download Sheet2 Processed Data as CSV",
+            data=sheet2_data.to_csv(index=False),
+            file_name="sheet2_processed_data.csv",
+            mime="text/csv",
+        )
+
